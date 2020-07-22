@@ -70,6 +70,7 @@ target/
 *.html
 *.pkl
 *runs/
+wandb/
 *.json
 *.gz
 *.model

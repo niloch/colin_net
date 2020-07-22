@@ -1,3 +1,3 @@
-from .nn import MLP, LSTMClassifier, NeuralNet
+from .nn import MLP, LSTMClassifier, Model
 
-__all__ = ["MLP", "NeuralNet", "LSTMClassifier"]
+__all__ = ["MLP", "Model", "LSTMClassifier"]

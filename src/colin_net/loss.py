@@ -12,15 +12,15 @@ import jax.numpy as np
 from jax import jit
 from jax.tree_util import tree_flatten
 
-from colin_net.nn import NeuralNet
+from colin_net.nn import Model
 from colin_net.tensor import Tensor
 
-Loss = Callable[[NeuralNet, Tensor, Tensor], float]
+Loss = Callable[[Model, Tensor, Tensor], float]
 
 
 class LossEnum(str, Enum):
     mean_squared_error = "mean_squared_error"
-    cross_entropy_loss = "binary_cross_entropy"
+    cross_entropy_loss = "cross_entropy"
 
 
 class RegularizationEnum(str, Enum):
@@ -29,55 +29,48 @@ class RegularizationEnum(str, Enum):
 
 
 @jit
-def l2(net: NeuralNet) -> float:
+def l2(net: Model) -> float:
     params, _ = tree_flatten(net)
     return np.sum([np.sum(layer ** 2) for layer in params])
 
 
-def l2_reguluarized(loss: Loss) -> Callable[[NeuralNet, Tensor, Tensor], float]:
+def l2_reguluarized(loss: Loss) -> Callable[[Model, Tensor, Tensor], float]:
     @jit
-    def wrapped(net: NeuralNet, inputs: Tensor, targets: Tensor) -> float:
+    def wrapped(net: Model, inputs: Tensor, targets: Tensor) -> float:
         return loss(net, inputs, targets) + l2(net)
 
     return wrapped
 
 
 @jit
-def l1(net: NeuralNet) -> float:
+def l1(net: Model) -> float:
     params, _ = tree_flatten(net)
     return np.sum([np.sum(np.abs(layer)) for layer in params])
 
 
-def l1_regularized(loss: Loss) -> Callable[[NeuralNet, Tensor, Tensor], float]:
+def l1_regularized(loss: Loss) -> Callable[[Model, Tensor, Tensor], float]:
     @jit
-    def wrapped(net: NeuralNet, inputs: Tensor, targets: Tensor) -> float:
+    def wrapped(net: Model, inputs: Tensor, targets: Tensor) -> float:
         return loss(net, inputs, targets) + l1(net)
 
     return wrapped
 
 
 @jit
-def mean_squared_error(model: NeuralNet, inputs: Tensor, targets: Tensor) -> float:
-
+def mean_squared_error(model: Model, inputs: Tensor, targets: Tensor) -> float:
     predicted = model(inputs)
     return np.mean((predicted - targets) ** 2)
 
 
 @jit
-def binary_cross_entropy(
-    model: NeuralNet, inputs: Tensor, targets: Tensor, tol: float = 1e-10
-) -> float:
+def cross_entropy(model: Model, inputs: Tensor, targets: Tensor) -> float:
     predicted = model(inputs)
-
-    return -np.mean(
-        targets * np.log(np.maximum(tol, predicted))
-        + (1 - targets) * np.log(np.maximum(tol, 1 - predicted))
-    )
+    return -np.mean(targets * np.log(predicted) + (1 - targets) * np.log(1 - predicted))
 
 
 LOSS_FUNCTIONS = {
     "mean_squared_error": mean_squared_error,
-    "binary_cross_entropy": binary_cross_entropy,
+    "cross_entropy": cross_entropy,
 }
 
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """The setup script."""
 
 from setuptools import find_packages, setup
@@ -11,6 +10,8 @@ requirements = [
     "tqdm>=4.45.0",
     "tensorboard>=2.2.1",
     "pydantic>=1.5.1",
+    "pydantic-cli>=2.2.0",
+    "wandb>=0.9.2, <0.9.3",
 ]
 
 setup_requirements = ["pytest-runner", "setuptools>=38.6.0", "wheel>=0.31.0"]

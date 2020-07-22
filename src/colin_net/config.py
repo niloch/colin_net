@@ -13,22 +13,20 @@ from colin_net.data import ITERATORS, IteratorEnum
 from colin_net.layers import ActivationEnum, InitializerEnum
 from colin_net.loss import LOSS_FUNCTIONS, REGULARIZATIONS, LossEnum, RegularizationEnum
 from colin_net.metrics import accuracy
-from colin_net.nn import MLP, LSTMClassifier, NeuralNet
+from colin_net.nn import MLP, LSTMClassifier, Model
 from colin_net.optim import OPTIMIZERS, OptimizerEnum
 from colin_net.tensor import Tensor
 
-# from colin_net.train import Trainer
 
-
-class NetConfig(BaseModel):
+class ModelConfig(BaseModel):
     output_dim: int
 
     @abstractmethod
-    def initialize(self, key: Tensor) -> NeuralNet:
+    def initialize(self, key: Tensor) -> Model:
         raise NotImplementedError
 
 
-class MLPConfig(NetConfig):
+class MLPConfig(ModelConfig):
     input_dim: int
     hidden_dim: int
     num_hidden: int
@@ -40,7 +38,7 @@ class MLPConfig(NetConfig):
         return MLP.create_mlp(key=key, **self.dict())
 
 
-class LSTMConfig(NetConfig):
+class LSTMConfig(ModelConfig):
     hidden_dim: int
     vocab_size: int
 
@@ -54,14 +52,14 @@ class UpdateState(BaseModel):
 
     iteration: int
     loss: float
-    net: NeuralNet
-    train_writer: SummaryWriter
-    test_writer: SummaryWriter
+    model: Model
+    log_writer: SummaryWriter
+    bar: Any
 
 
 class Experiment(BaseModel):
     experiment_name: str
-    net_config: Union[MLPConfig, LSTMConfig]
+    model_config: Union[MLPConfig, LSTMConfig]
     random_seed: int = 42
     loss: LossEnum = LossEnum.mean_squared_error
     regularization: Optional[RegularizationEnum] = None
@@ -85,7 +83,7 @@ class Experiment(BaseModel):
     def hparams(self) -> Dict[str, str]:
 
         return {
-            key: str(val) for key, val in self.dict().items() if key != "net_config"
+            key: str(val) for key, val in self.dict().items() if key != "model_config"
         }
 
     def train(
@@ -96,17 +94,19 @@ class Experiment(BaseModel):
         test_Y: Sequence[Any],
     ) -> Iterator[UpdateState]:
 
-        # Intantiate the Net
+        # Intantiate the Model
         key = random.PRNGKey(self.random_seed)
         key, subkey = random.split(key)
-        net = self.net_config.initialize(subkey)
+        model = self.model_config.initialize(subkey)
 
         # Instantiate the Optimizer
         if self.regularization:
             loss = REGULARIZATIONS[self.regularization](LOSS_FUNCTIONS[self.loss])
         else:
             loss = LOSS_FUNCTIONS[self.loss]
-        optimizer = OPTIMIZERS[self.optimizer].initialize(net, loss, self.learning_rate)
+        optimizer = OPTIMIZERS[self.optimizer].initialize(
+            model, loss, self.learning_rate
+        )
 
         # Instantiate the data Iterators
         key, subkey = random.split(key)
@@ -119,51 +119,55 @@ class Experiment(BaseModel):
         )
 
         # Create the loggers
-        now = datetime.now().isoformat()
-        train_writer = SummaryWriter(f"{self.experiment_name}/{now}-train")
-        test_writer = SummaryWriter(f"{self.experiment_name}/{now}-test")
-        train_writer.add_hparams(self.hparams(), {}, name="hparams")
-        train_writer.add_text("Net", f"```{net.json()}```")
+        now = datetime.now().isoformat().split(".")[0]
+        directory = f"{self.experiment_name}/{now}"
+        log_writer = SummaryWriter(directory)
+        log_writer.add_hparams(self.hparams(), {}, name="hparams")
+        log_writer.add_text("Model", f"```{model.json()}```")
 
         updates = 0
         train_loss_accumulator = 0.0
 
         bar = tqdm(total=self.global_step)
+        prev_accuracy = 0
         while updates < self.global_step:
             for batch in train_iterator:
-                net = net.to_train()
-                batch_loss, net = optimizer.step(batch.inputs, batch.targets)
+                model = model.to_train()
+                batch_loss, model = optimizer.step(batch.inputs, batch.targets)
                 train_loss_accumulator += batch_loss
                 if updates % self.log_every == 0:
-                    net.save(f"{self.experiment_name}/{now}_{updates}_model.pkl")
-                    train_writer.add_scalar(
-                        "loss", float(train_loss_accumulator), updates
+                    log_writer.add_scalar(
+                        "train_loss", float(train_loss_accumulator), updates
                     )
                     train_loss_accumulator = 0.0
 
-                    net = net.to_eval()
+                    model = model.to_eval()
                     test_loss_accumulator = 0.0
                     test_pred_accumulator = []
                     for test_batch in test_iterator:
-                        test_loss = loss(net, test_batch.inputs, test_batch.targets)
+                        test_loss = loss(model, test_batch.inputs, test_batch.targets)
                         test_loss_accumulator += test_loss
                         test_pred_accumulator.append(
-                            net.predict_proba(test_batch.inputs)
+                            model.predict_proba(test_batch.inputs)
                         )
 
                     test_probs = np.vstack(test_pred_accumulator)
                     test_accuracy = accuracy(test_iterator.targets, test_probs)
-                    test_writer.add_scalar(
-                        "loss", float(test_loss_accumulator), updates
+                    if test_accuracy > prev_accuracy:
+                        prev_accuracy = test_accuracy
+                        model.save(directory + f"/{updates}_model.pkl", overwrite=True)
+                    log_writer.add_scalar(
+                        "test_loss", float(test_loss_accumulator), updates
                     )
-                    print(test_accuracy)
-                    test_writer.add_scalar("accuracy", float(test_accuracy), updates)
+                    log_writer.add_scalar(
+                        "test_accuracy", float(test_accuracy), updates
+                    )
                 bar.update()
                 yield UpdateState(
                     iteration=updates,
                     loss=batch_loss,
-                    net=net,
-                    train_writer=train_writer,
-                    test_writer=test_writer,
+                    model=model,
+                    log_writer=log_writer,
+                    bar=bar,
                 )
                 updates += 1

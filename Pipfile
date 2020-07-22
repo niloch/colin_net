@@ -15,15 +15,13 @@ pytest = "*"
 pytest-cov = "*"
 pytest-sugar = "*"
 flake8-bugbear = "*"
+pytest-html = "*"
 
 [packages]
 colin_net = {editable = true,path = "."}
 jupyterlab = "*"
-pydantic = "*"
-tensorboardx = "*"
 sentencepiece = "*"
 ipywidgets = "*"
-joblib = "*"
 plotly = "*"
 pandas = "*"
 scikit-learn = "*"

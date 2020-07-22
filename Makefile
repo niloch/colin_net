@@ -29,7 +29,7 @@ clean-test:
 
 ## check style with flake8, mypy, black
 lint: clean
-	pipenv run isort -y
+	pipenv run isort .
 	pipenv run black .
 	pipenv run flake8 . --exit-zero
 	pipenv run mypy .

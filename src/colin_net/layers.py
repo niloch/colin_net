@@ -91,14 +91,14 @@ class Linear(Layer):
         activation: ActivationEnum = ActivationEnum.identity,
         initializer: InitializerEnum = InitializerEnum.normal,
     ) -> "Linear":
-        """Factory for new Linear from input and output dimentsions"""
+        """Factory for new Linear from input and output dimensions"""
         if initializer not in InitializerEnum.__members__:
             raise ValueError(
                 f"initializer: {initializer} not in {InitializerEnum.__members__.values()}"
             )
         if activation not in ActivationEnum.__members__:
             raise ValueError(
-                f"Actication: {activation} not in {ActivationEnum.__members__.values()}"
+                f"Activation: {activation} not in {ActivationEnum.__members__.values()}"
             )
         return cls(
             w=INITIALIZERS[initializer](key, shape=(output_dim, input_dim)),
@@ -160,9 +160,6 @@ class Dropout(Layer):
 
     def to_train(self) -> "Dropout":
         return Dropout(rng=self.rng.split(), keep=self.keep, mode=Mode.train)
-
-    def randomize(self) -> "Dropout":
-        return Dropout(rng=self.rng.split(), keep=self.keep, mode=self.mode)
 
     def tree_flatten(self) -> Tuple[Tuple[None], Tuple[RNGWrapper, float, Mode]]:
         return (None,), (self.rng, self.keep, self.mode)
