@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Callable
 
 import jax.numpy as np
-from jax import jit
+from jax import jit, nn
 from jax.tree_util import tree_flatten
 
 from colin_net.nn import Model
@@ -24,8 +24,8 @@ class LossEnum(str, Enum):
 
 
 class RegularizationEnum(str, Enum):
-    l2_reguluarized = "l2_regularized"
-    l1_regularized = "l1_regularized"
+    l2 = "l2"
+    l1 = "l1"
 
 
 @jit
@@ -64,8 +64,11 @@ def mean_squared_error(model: Model, inputs: Tensor, targets: Tensor) -> float:
 
 @jit
 def cross_entropy(model: Model, inputs: Tensor, targets: Tensor) -> float:
-    predicted = model(inputs)
-    return -np.mean(targets * np.log(predicted) + (1 - targets) * np.log(1 - predicted))
+    # log softmax
+    predicted = nn.log_softmax(model(inputs))
+
+    # negative log likelihood
+    return -(targets * predicted).mean()
 
 
 LOSS_FUNCTIONS = {
@@ -75,6 +78,6 @@ LOSS_FUNCTIONS = {
 
 
 REGULARIZATIONS = {
-    "l2_regularized": l2_reguluarized,
-    "l1_regularized": l1_regularized,
+    "l2": l2_reguluarized,
+    "l1": l1_regularized,
 }

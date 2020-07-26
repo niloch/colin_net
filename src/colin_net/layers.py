@@ -119,13 +119,6 @@ class Linear(Layer):
 class FrozenLinear(Linear):
     """Unrainable Linear Layer"""
 
-    @classmethod
-    def initialize(
-        cls, *, w: Tensor, b: Tensor, activation: ActivationEnum
-    ) -> "FrozenLinear":
-        """Factory for new Linear from input and output dimentsions"""
-        return cls(w=w, b=b, activation=activation)
-
     def tree_flatten(self) -> Tuple[Tuple[None], Tuple[Tensor, Tensor, ActivationEnum]]:
         return (None,), (self.w, self.b, self.activation,)
 
@@ -202,10 +195,6 @@ class Embedding(Layer):
 class FrozenEmbedding(Embedding):
     """Untrainable Embedding Layer for pretrained embedding"""
 
-    @classmethod
-    def initialize(cls, embedding_matrix: Tensor) -> "FrozenEmbedding":
-        return cls(embedding_matrix=embedding_matrix)
-
     def tree_flatten(self) -> Tuple[Tuple[None], Tensor]:
         return (None,), self.embedding_matrix
 
@@ -265,6 +254,28 @@ class LSTMCell(Layer):
         # hidden state vector is copied as output
         return (h, c), h
 
+    def tree_flatten(self) -> Tuple[Tuple[Tensor, ...], None]:
+        return (
+            (self.Wf, self.bf, self.Wi, self.bi, self.Wc, self.bc, self.Wo, self.bo),
+            None,
+        )
+
+    @classmethod
+    def tree_unflatten(cls, aux: None, params: Tuple[Tensor, ...]) -> "LSTMCell":
+
+        return cls.construct(
+            Wf=params[0],
+            bf=params[1],
+            Wi=params[2],
+            bi=params[3],
+            Wc=params[4],
+            bc=params[5],
+            Wo=params[6],
+            bo=params[7],
+        )
+
+
+class FrozenLSTMCell(LSTMCell):
     def tree_flatten(self) -> Tuple[Tuple[Tensor, ...], None]:
         return (
             (self.Wf, self.bf, self.Wi, self.bi, self.Wc, self.bc, self.Wo, self.bo),

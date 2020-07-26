@@ -1,21 +1,54 @@
 import json
 from abc import abstractmethod
-from datetime import datetime
-from typing import Any, Dict, Iterator, Optional, Sequence, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Type, Union
 
 import jax.numpy as np
+from jax.interpreters.xla import DeviceArray
+import markdown
+import wandb
 from jax import random
+from jax.tree_util import tree_flatten
 from pydantic import BaseModel
-from tensorboardX import SummaryWriter
-from tqdm.autonotebook import tqdm
 
-from colin_net.data import ITERATORS, IteratorEnum
+from colin_net.data import ITERATORS, DataIterator, IteratorEnum
 from colin_net.layers import ActivationEnum, InitializerEnum
-from colin_net.loss import LOSS_FUNCTIONS, REGULARIZATIONS, LossEnum, RegularizationEnum
+from colin_net.loss import (
+    LOSS_FUNCTIONS,
+    REGULARIZATIONS,
+    Loss,
+    LossEnum,
+    RegularizationEnum,
+)
 from colin_net.metrics import accuracy
 from colin_net.nn import MLP, LSTMClassifier, Model
-from colin_net.optim import OPTIMIZERS, OptimizerEnum
+from colin_net.optim import OPTIMIZERS, Optimizer, OptimizerEnum
 from colin_net.tensor import Tensor
+
+
+def get_keys(d: Dict[str, Any]) -> List[str]:
+    keys = []
+    for k, v in d.items():
+        if isinstance(v, DeviceArray):
+            keys.append(k)
+        elif isinstance(v, dict):
+            keys.extend(get_keys(v))
+        elif isinstance(v, list):
+            keys.extend([key for ls in v for key in get_keys(ls)])
+    return keys
+
+
+def log_wandb(d: Dict[str, Any], step: int) -> None:
+    try:
+        wandb.log(d, step=step)
+    except ValueError:
+        pass
+
+
+def save_wandb(filename: str) -> None:
+    try:
+        wandb.save(filename)
+    except ValueError:
+        pass
 
 
 class ModelConfig(BaseModel):
@@ -50,21 +83,22 @@ class UpdateState(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-    iteration: int
+    step: int
     loss: float
     model: Model
-    log_writer: SummaryWriter
-    bar: Any
 
 
 class Experiment(BaseModel):
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"
+
     experiment_name: str
     model_config: Union[MLPConfig, LSTMConfig]
     random_seed: int = 42
     loss: LossEnum = LossEnum.mean_squared_error
     regularization: Optional[RegularizationEnum] = None
     optimizer: OptimizerEnum = OptimizerEnum.sgd
-    iterator_type: IteratorEnum = IteratorEnum.batch_iterator
     learning_rate: float = 0.01
     batch_size: int = 32
     global_step: int = 5000
@@ -80,11 +114,40 @@ class Experiment(BaseModel):
             d = json.load(infile)
             return cls.from_dict(d)
 
-    def hparams(self) -> Dict[str, str]:
+    def get_rng_keys(self, num: int = 1) -> Tensor:
+        # breakpoint()
+        if getattr(self, "key", None) is None:
+            self.key: Tensor = random.PRNGKey(self.random_seed)
+        keys = random.split(self.key, num=num + 1)
+        if num > 1:
+            subkeys = keys[1:]
+        else:
+            subkeys = keys[1]
+        self.key = keys[0]
+        return subkeys
 
-        return {
-            key: str(val) for key, val in self.dict().items() if key != "model_config"
-        }
+    def create_model(self) -> Model:
+        subkey = self.get_rng_keys()
+        return self.model_config.initialize(subkey)
+
+    def create_loss_func(self) -> Loss:
+        if self.regularization:
+            loss = REGULARIZATIONS[self.regularization](LOSS_FUNCTIONS[self.loss])
+        else:
+            loss = LOSS_FUNCTIONS[self.loss]
+        return loss
+
+    def create_optimizer(self, model: Model, loss: Loss) -> Optimizer:
+        optimizer_class: Type[Optimizer] = OPTIMIZERS[self.optimizer]
+        return optimizer_class.initialize(model, loss, self.learning_rate)
+
+    def create_iterator(
+        self, iterator_type: str, inputs: Any, targets: Any, batch_size: int
+    ) -> DataIterator:
+        subkey = self.get_rng_keys()
+        return ITERATORS[iterator_type](
+            inputs=inputs, targets=targets, key=subkey, batch_size=self.batch_size
+        )
 
     def train(
         self,
@@ -92,52 +155,52 @@ class Experiment(BaseModel):
         train_Y: Sequence[Any],
         test_X: Sequence[Any],
         test_Y: Sequence[Any],
+        iterator_type: str = IteratorEnum.batch_iterator,
     ) -> Iterator[UpdateState]:
 
-        # Intantiate the Model
-        key = random.PRNGKey(self.random_seed)
-        key, subkey = random.split(key)
-        model = self.model_config.initialize(subkey)
+        model = self.create_model()
 
-        # Instantiate the Optimizer
-        if self.regularization:
-            loss = REGULARIZATIONS[self.regularization](LOSS_FUNCTIONS[self.loss])
-        else:
-            loss = LOSS_FUNCTIONS[self.loss]
-        optimizer = OPTIMIZERS[self.optimizer].initialize(
-            model, loss, self.learning_rate
-        )
+        loss = self.create_loss_func()
+
+        optimizer = self.create_optimizer(model, loss)
 
         # Instantiate the data Iterators
-        key, subkey = random.split(key)
-        train_iterator = ITERATORS[self.iterator_type](
-            inputs=train_X, targets=train_Y, key=key, batch_size=self.batch_size
+        train_iterator = self.create_iterator(
+            iterator_type, train_X, train_Y, self.batch_size
         )
-        key, subkey = random.split(key)
-        test_iterator = ITERATORS[self.iterator_type](
-            inputs=test_X, targets=test_Y, key=key, batch_size=self.batch_size
+        test_iterator = self.create_iterator(
+            iterator_type, test_X, test_Y, self.batch_size
+        )
+        model_markdown = f"```json\n{model.json()}\n```"
+        log_wandb(
+            {"Model Definition": wandb.Html(markdown.markdown(model_markdown))}, step=0
         )
 
-        # Create the loggers
-        now = datetime.now().isoformat().split(".")[0]
-        directory = f"{self.experiment_name}/{now}"
-        log_writer = SummaryWriter(directory)
-        log_writer.add_hparams(self.hparams(), {}, name="hparams")
-        log_writer.add_text("Model", f"```{model.json()}```")
-
-        updates = 0
+        step = 1
         train_loss_accumulator = 0.0
 
-        bar = tqdm(total=self.global_step)
         prev_accuracy = 0
-        while updates < self.global_step:
+        while step < self.global_step:
             for batch in train_iterator:
                 model = model.to_train()
                 batch_loss, model = optimizer.step(batch.inputs, batch.targets)
+                grads = optimizer.grads
+                params, _ = tree_flatten(grads)
+                layer_names = get_keys(model.dict())
+                if len(layer_names) != len(set(layer_names)):
+                    for i, (weights, name) in enumerate(zip(params, layer_names)):
+                        log_wandb(
+                            {f"grad_{name}_{i}": wandb.Histogram(weights)}, step=step
+                        )
+                else:
+                    for weights, name in zip(params, layer_names):
+                        log_wandb({f"grad_{name}": wandb.Histogram(weights)}, step=step)
+
                 train_loss_accumulator += batch_loss
-                if updates % self.log_every == 0:
-                    log_writer.add_scalar(
-                        "train_loss", float(train_loss_accumulator), updates
+                if step % self.log_every == 0:
+                    log_wandb(
+                        {"train_loss": float(train_loss_accumulator / self.log_every)},
+                        step=step,
                     )
                     train_loss_accumulator = 0.0
 
@@ -155,19 +218,18 @@ class Experiment(BaseModel):
                     test_accuracy = accuracy(test_iterator.targets, test_probs)
                     if test_accuracy > prev_accuracy:
                         prev_accuracy = test_accuracy
-                        model.save(directory + f"/{updates}_model.pkl", overwrite=True)
-                    log_writer.add_scalar(
-                        "test_loss", float(test_loss_accumulator), updates
+                        model.save(
+                            f"{self.experiment_name}_{step}_model.pkl", overwrite=True
+                        )
+
+                        save_wandb(f"{self.experiment_name}_{step}_model.pkl")
+                    log_wandb(
+                        {
+                            "test_loss": float(test_loss_accumulator)
+                            / test_iterator.num_batches
+                        },
+                        step=step,
                     )
-                    log_writer.add_scalar(
-                        "test_accuracy", float(test_accuracy), updates
-                    )
-                bar.update()
-                yield UpdateState(
-                    iteration=updates,
-                    loss=batch_loss,
-                    model=model,
-                    log_writer=log_writer,
-                    bar=bar,
-                )
-                updates += 1
+                    log_wandb({"test_accuracy": float(test_accuracy)}, step=step)
+                yield UpdateState(step=step, loss=batch_loss, model=model)
+                step += 1

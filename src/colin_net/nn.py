@@ -181,23 +181,6 @@ class MLP(Model):
         return cls(layers=params, input_dim=aux[0], output_dim=aux[1])
 
 
-class FrozenMLP(MLP):
-    @classmethod
-    def initialize(
-        cls, layers: List[Layer], input_dim: int, output_dim: int
-    ) -> "FrozenMLP":
-        return cls(layers=layers, input_dim=input_dim, output_dim=output_dim)
-
-    def tree_flatten(self) -> Tuple[Tuple[None], Tuple[List[Layer], int, int]]:
-        return (None,), (self.layers, self.input_dim, self.output_dim)
-
-    @classmethod
-    def tree_unflatten(
-        cls, aux: Tuple[List[Layer], int, int], params: Tuple[None]
-    ) -> "MLP":
-        return cls(layers=aux[0], input_dim=aux[1], output_dim=aux[2])
-
-
 class LSTMClassifier(Model):
 
     embeddings: Embedding
@@ -289,57 +272,6 @@ class LSTMClassifier(Model):
             h_prev=params[3],
             c_prev=params[4],
             output_dim=aux,
-        )
-
-
-class FrozenLSTMClassifier(LSTMClassifier):
-    @classmethod
-    def initialize(
-        cls,
-        embeddings: Embedding,
-        cell: LSTMCell,
-        output_layer: Linear,
-        h_prev: Tensor,
-        c_prev: Tensor,
-        output_dim: int,
-    ) -> "FrozenLSTMClassifier":
-        return cls(
-            embeddings=embeddings,
-            cell=cell,
-            output_layer=output_layer,
-            h_prev=h_prev,
-            c_prev=c_prev,
-            output_dim=output_dim,
-        )
-
-    def tree_flatten(
-        self,
-    ) -> Tuple[Tuple[None], Tuple[Embedding, LSTMCell, Linear, Tensor, Tensor, int]]:
-        return (
-            (None,),
-            (
-                self.embeddings,
-                self.cell,
-                self.output_layer,
-                self.h_prev,
-                self.c_prev,
-                self.output_dim,
-            ),
-        )
-
-    @classmethod
-    def tree_unflatten(
-        cls,
-        aux: Tuple[Embedding, LSTMCell, Linear, Tensor, Tensor, int],
-        params: Tuple[None],
-    ) -> "LSTMClassifier":
-        return cls.construct(
-            embeddings=aux[0],
-            cell=aux[1],
-            output_layer=aux[2],
-            h_prev=aux[3],
-            c_prev=aux[4],
-            output_dim=aux[5],
         )
 
 
