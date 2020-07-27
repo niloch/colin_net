@@ -5,9 +5,9 @@ learned with a simple linear model is XOR
 import json
 
 import jax.numpy as np
-import wandb
 from tqdm import tqdm
 
+import wandb
 from colin_net.config import Experiment, log_wandb
 from colin_net.metrics import accuracy
 

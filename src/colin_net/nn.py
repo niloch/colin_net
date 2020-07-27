@@ -10,15 +10,8 @@ import jax.numpy as np
 from jax import jit, lax, nn, random, vmap
 
 from colin_net.base import RNGWrapper
-from colin_net.layers import (
-    ActivationEnum,
-    Dropout,
-    Embedding,
-    InitializerEnum,
-    Layer,
-    Linear,
-    LSTMCell,
-)
+from colin_net.layers import (ActivationEnum, Dropout, Embedding, InitializerEnum,
+                              Layer, Linear, LSTMCell)
 from colin_net.tensor import Tensor
 
 suffix = ".pkl"
