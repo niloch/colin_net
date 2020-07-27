@@ -68,7 +68,7 @@ def cross_entropy(model: Model, inputs: Tensor, targets: Tensor) -> float:
     predicted = nn.log_softmax(model(inputs))
 
     # negative log likelihood
-    return -(targets * predicted).mean()
+    return -np.mean(np.sum(targets * predicted, axis=1))
 
 
 LOSS_FUNCTIONS = {

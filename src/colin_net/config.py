@@ -4,7 +4,6 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Type, Union
 
 import jax.numpy as np
 from jax.interpreters.xla import DeviceArray
-import markdown
 import wandb
 from jax import random
 from jax.tree_util import tree_flatten
@@ -170,10 +169,6 @@ class Experiment(BaseModel):
         )
         test_iterator = self.create_iterator(
             iterator_type, test_X, test_Y, self.batch_size
-        )
-        model_markdown = f"```json\n{model.json()}\n```"
-        log_wandb(
-            {"Model Definition": wandb.Html(markdown.markdown(model_markdown))}, step=0
         )
 
         step = 1

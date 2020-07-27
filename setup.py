@@ -8,7 +8,7 @@ requirements = [
     "jaxlib>=0.1.45",
     "tqdm>=4.45.0",
     "pydantic>=1.5.1",
-    "wandb>=0.9.2, <0.9.3",
+    "wandb>=0.9.4",
 ]
 
 setup_requirements = ["pytest-runner", "setuptools>=38.6.0", "wheel>=0.31.0"]
