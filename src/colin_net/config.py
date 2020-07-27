@@ -11,8 +11,13 @@ from pydantic import BaseModel
 import wandb
 from colin_net.data import ITERATORS, DataIterator, IteratorEnum
 from colin_net.layers import ActivationEnum, InitializerEnum
-from colin_net.loss import (LOSS_FUNCTIONS, REGULARIZATIONS, Loss, LossEnum,
-                            RegularizationEnum)
+from colin_net.loss import (
+    LOSS_FUNCTIONS,
+    REGULARIZATIONS,
+    Loss,
+    LossEnum,
+    RegularizationEnum,
+)
 from colin_net.metrics import accuracy
 from colin_net.nn import MLP, LSTMClassifier, Model
 from colin_net.optim import OPTIMIZERS, Optimizer, OptimizerEnum
@@ -34,14 +39,14 @@ def get_keys(d: Dict[str, Any]) -> List[str]:
 def log_wandb(d: Dict[str, Any], step: int) -> None:
     try:
         wandb.log(d, step=step)
-    except ValueError:
+    except:
         pass
 
 
 def save_wandb(filename: str) -> None:
     try:
         wandb.save(filename)
-    except ValueError:
+    except:
         pass
 
 
